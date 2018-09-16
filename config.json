@@ -1,0 +1,68 @@
+{
+    "port": 20000,
+    "certPath": "cert/cert.pem",
+    "certPrivKeyPath": "cert/privkey.pem",
+    "keyFilePath": "auth/this-app-credentials.json",
+    "logFile": "helper.log",
+    "fileLogLevel": "info",
+    "consoleLogLevel": "silly",
+    "saveAudioFiles": false,
+    "language": "en-US",
+
+    "relays": {
+        "broadcast": {"on": true, "route": "/broadcast"},
+        "broadcastAudio": {"on": true,
+                           "route": "/broadcastAudio",
+                           "sounds": {
+                                "noisy": {
+                                    "path": "audio/foo.flac",
+                                    "format": "FLAC"
+                                }
+                            }
+                        },
+        "custom": {"on": true, "route": "/custom"},
+        "chromecastAudio": {"on": true,
+                            "route": "/chromecastAudio",
+                            "sounds": {
+                                "noisy": {
+                                    "path": "audio/bar.flac",
+                                    "contentType": "audio/flac"
+                                }
+                            }
+                        },
+        "chromecastTTS": {"on": true,
+                          "route": "/chromecastTTS",
+                          "apiCredentialPath": "auth/tts-credentials.json",
+                          "cachePath": "audio",
+                          "defaultLanguage": "en-US",
+                          "defaultGender": "NEUTRAL"
+                        },
+        "chromecastURL": {"on": true,
+                          "route": "/chromecastURL"}
+    },
+
+    "staticServer": {
+        "port": 25000,
+        "path": "audio",
+        "route": "/media",
+        "whitelist": ["192.168.0.0/24"]
+    },
+
+    "users": {
+        "public": {
+            "savedTokensPath": "auth/public-tokens.json",
+            "relayKey": "r3pl4ac3th153x4mpl3n0nc3",
+            "chromecastFriendlyName": "public"
+        },
+        "bedrooms": {
+            "savedTokensPath": "auth/bedrooms-tokens.json",
+            "relayKey": "r3pl4ac3th153x4mpl3n0nc3",
+            "chromecastFriendlyName": "bedrooms"
+        },
+        "global": {
+            "savedTokensPath": "global-tokens.json",
+            "relayKey": "r3pl4ac3th153x4mpl3n0nc3",
+            "chromecastFriendlyName": "global"
+        }
+    }
+}
