@@ -177,6 +177,10 @@ Requests must have the `Content-Type: application/json`, and the body must be va
 
 The server will respond with a `200` code if the request is successful, or a `500` if not.
 
+An additional optional field is available to specify a delay before the message is executed:
+
+* `delayInSecs` - **Number**. The number of seconds by which to delay the execution of an announcement.
+
 ### Broadcast
 
 Broadcasts invoke the broadcast functionality of Google Assistant devices. This is analogous to typing `broadcast <message>` into the Google Assistant on an Android device. In this case, the `broadcast` is omitted, and only the message is included in the `command` field in the request JSON, e.g.:
