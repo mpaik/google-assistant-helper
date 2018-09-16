@@ -9,7 +9,7 @@ This project is a Node.js server that provides a helper proxy/middleman for pass
 * Playback of text via Chromecast using the [Google Cloud Text-to-Speech API](https://cloud.google.com/text-to-speech/)
 * \[*Optional*\] TLS Support
 
-The impetus for this project is to provide a simple and full-featured way of using Google Home devces for custom announcements for use with e.g. smart home integrations.
+The impetus for this project is to provide a simple and full-featured way of using Google Home devces for custom announcements for use with e.g. smart home integrations. See the [wemo-control](https://github.com/mpaik/wemo-control) project for a basic example of a caller.
 
 *N.B.*: It is possible to call the Google Assistant Helper endpoints from [IFTTT](https://ifttt.com/), but this is typically too slow to be useful.
 
