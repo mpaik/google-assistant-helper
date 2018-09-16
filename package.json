@@ -1,0 +1,37 @@
+{
+    "name": "google-assistant-helper",
+    "version": "0.0.1",
+    "description": "Middleman server to allow custom integration with Google Home/Assistant",
+    "main": "google-assistant-helper.js",
+    "scripts": {
+        "start": "node google-assistant-helper.js"
+    },
+    "keywords": [
+        "google",
+        "assistant",
+        "home",
+        "broadcast",
+        "relay",
+        "chromecast",
+        "tts",
+        "webhook"
+    ],
+    "author": "Michael Paik <michael.paik@gmail.com> (http://www.paik.org)",
+    "license": "Apache 2.0",
+    "dependencies": {
+        "auto-updater": "^1.0.2",
+        "castv2-client": "^1.2.0",
+        "express": "^4.16.3",
+        "express-ipfilter": "^0.3.1",
+        "lodash": "^4.17.10",
+        "express-winston": "^2.0.0",
+        "google-assistant": "^0.5.2",
+        "@google-cloud/text-to-speech": "^0.3.0",
+        "got": "^8.3.2",
+        "mdns": "^2.4.0",
+        "serve-static": "^1.13.2",
+        "wemo-client": "^0.15.0",
+        "winston": "^2.0.0",
+        "ip": "^1.1.5"
+    }
+}
