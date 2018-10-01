@@ -80,6 +80,12 @@ const cast = require('./cast');
 // Use JSON middleware
 app.use(express.json());
 
+// Add middleware to catch body parser errors
+app.use((err, req, res, next) => {
+  logger.error(`Error parsing JSON, returning 400`,err);
+  res.status(400).send({"result":"Malformed JSON"});
+});
+
 var router = express.Router();
 
 // Build the routes
@@ -111,7 +117,7 @@ router.post(compositeRoute, function (req, res) {
   // Make sure we have everything we need
   if (command == null || user == null || relayKey == null) {
     if (relayKey) relayKey = `[Redacted]`;
-    logger.info(`Malformed request: command: "${command}", user: ${user}, relayKey: ${relayKey}.`);
+    logger.info(`Malformed request, returning 400: command: "${command}", user: ${user}, relayKey: ${relayKey}.`);
     res.status(400).send({"result":"Malformed request"});
   }
   else {
