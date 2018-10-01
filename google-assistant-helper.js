@@ -65,7 +65,8 @@ var winstonConfig = {
       level: config.consoleLogLevel,
       handleExceptions: true,
       json: false,
-      colorize: true
+      colorize: true,
+      prettyPrint: true
     })
     ],
     exitOnError: false
@@ -180,7 +181,7 @@ router.post(compositeRoute, function (req, res) {
                              });
           });
         }
-        setTimeout(() => {cast(config.users[user].chromecastFriendlyName,
+        setTimeout(() => {cast.cast(config.users[user].chromecastFriendlyName,
                                `http://${ip.address()}:${config.staticServer.port}${config.staticServer.route}/${encodedCommand}.mp3`,'audio/mp3')},
                    delay == null ? 0 : delay * 1000);
         res.status(200).send({"result": `Played ${command} via Chromecast.`});              
@@ -193,7 +194,7 @@ router.post(compositeRoute, function (req, res) {
         }
         else {
           logger.info(`Sending sound ${command} via Chromecast for user ${user}.`);
-          setTimeout(() => {cast(config.users[user].chromecastFriendlyName,
+          setTimeout(() => {cast.cast(config.users[user].chromecastFriendlyName,
                                  `http://${(ip.address())}:${config.staticServer.port}${config.staticServer.route}/${path.basename(config.relays.chromecastAudio.sounds[command].path)}`,config.relays.chromecastAudio.sounds[command].contentType)},
                      delay == null ? 0 : delay * 1000);
           res.status(200).send({"result": `Played ${command} via Chromecast.`});
@@ -208,9 +209,31 @@ router.post(compositeRoute, function (req, res) {
         }
         else {
           logger.info(`Sending contentId=${command}, contentType=${req.body.contentType} via Chromecast for user ${user}.`);
-          setTimeout(() => {cast(config.users[user].chromecastFriendlyName,command,req.body.contentType)},
+          setTimeout(() => {cast.cast(config.users[user].chromecastFriendlyName,command,req.body.contentType)},
                      delay == null ? 0 : delay * 1000);
           res.status(200).send({"result": `Played ${command} via Chromecast.`});
+        }
+      }
+      // If this is the Chromecast control route
+      else if (relayRoutes["chromecastControl"] != null && req.path === config.relays.chromecastControl.route) {
+        // Check whether valid command, sanitize
+        if (req.body.command && (req.body.command === cast.PLAY ||
+                                 req.body.command === cast.PAUSE ||
+                                 req.body.command === cast.STOP ||
+                                 (req.body.command === cast.SEEK &&
+                                  req.body.currentTime &&
+                                  Number.isInteger(req.body.currentTime) &&
+                                  req.body.currentTime >= 0))) {
+          let ctl = {type: req.body.command};
+          if (req.body.command === cast.SEEK) ctl.currentTime = req.body.currentTime;
+          logger.info(`Sending control request via Chromecast for user ${user}.`,ctl);
+          setTimeout(() => {cast.control(config.users[user].chromecastFriendlyName,ctl)},
+                     delay == null ? 0 : delay * 1000);
+          res.status(200).send({"result": `Send control request ${command} via Chromecast.`});
+        }
+        else {
+          logger.error(`Malformed request. Aborting.`);
+          res.status(500).send({"result": 'Malfored request.'});
         }
       }
       // If this is broadcast text or custom

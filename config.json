@@ -38,7 +38,9 @@
                           "defaultGender": "NEUTRAL"
                         },
         "chromecastURL": {"on": true,
-                          "route": "/chromecastURL"}
+                          "route": "/chromecastURL"},
+        "chromecastControl": {"on": true,
+                              "route": "chromecastControl"}
     },
 
     "staticServer": {
