@@ -62,7 +62,7 @@ function cast(serviceName, mediaUrl, mediaType, cb) {
 		logger.error(`Invalid service name, aborting.`,{"serviceName": serviceName});
 		return
 	}
-	logger.debug(`Creating cast client.`);
+	logger.debug(`Creating cast client for service ${serviceName}.`);
 	let client = new Client();
 	logger.debug(`Created cast client. Connecting.`,{serviceName: chromecasts[serviceName]});
 	client.connect(chromecasts[serviceName], () => {
