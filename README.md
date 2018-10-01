@@ -9,7 +9,7 @@ This project is a Node.js server that provides a helper proxy/middleman for pass
 * Playback of text via Chromecast using the [Google Cloud Text-to-Speech API](https://cloud.google.com/text-to-speech/)
 * \[*Optional*\] TLS Support
 
-The impetus for this project is to provide a simple and full-featured way of using Google Home devces for custom announcements for use with e.g. smart home integrations. See the [wemo-control](https://github.com/mpaik/wemo-control) project for a basic example of a caller.
+The impetus for this project is to provide a simple and full-featured way of using Google Home devces for custom announcements for use with e.g. smart home integrations.
 
 *N.B.*: It is possible to call the Google Assistant Helper endpoints from [IFTTT](https://ifttt.com/), but this is typically too slow to be useful.
 
@@ -120,6 +120,8 @@ The `config.json` file contains all the configuration information for the applic
 
 * `chromecastURL` - Enables sending of media to Chromecast devices on demand by supplying media URLs and types.
 
+* `chromecastControl` - Enables control of ongoing Chromecast playback initiated through this server.
+
 For each relay, set `on` to `true` to activate, or to `false` to deactivate. Note that relay routes must be unique.
 
 The `broadcastAudio` and `chromecastAudio` relays may have the same preconfigured sounds or different ones, but they are separately defined because not all sounds can be played via broadcast. The input to the audio broadcast stream is expected to be a verbal command entered via microphone. As such, the machine learning model that processes the input expects said input to meet two important conditions:
@@ -176,10 +178,6 @@ Requests must have the `Content-Type: application/json`, and the body must be va
 * `relayKey` - **String**. The key associated with the user above.
 
 The server will respond with a `200` code if the request is successful, or a `500` if not.
-
-An additional optional field is available to specify a delay before the message is executed:
-
-* `delayInSecs` - **Number**. The number of seconds by which to delay the execution of an announcement.
 
 ### Broadcast
 
@@ -272,5 +270,28 @@ The Chromecast URL relay allows the on-demand playback of media URLs via Chromec
 	"user": "global",
 	"relayKey": "Qk5U7G6O3AiUIM1yHCOFPf",
 	"contentType": "video/mp4"
+}
+```
+
+### ChromecastControl
+
+The Chromecast Control relay allows the control of ongoing Chromecast playback initiated by this server. This functionality is necessary because the Google Assistant API appears currently not to support media control and playback requests. The `command` field should contain one of `PLAY`, `PAUSE`, `STOP`, and `SEEK`. The `SEEK` command must be accompanied by a field `currentTime` with the time index of the desired seek point, in integer seconds; i.e. to seek to 2:12, this value should be `132`.
+
+```
+{
+	"command": "PAUSE",
+	"user": "global",
+	"relayKey": "Qk5U7G6O3AiUIM1yHCOFPf"
+}
+```
+
+or 
+
+```
+{
+	"command": "SEEK",
+	"currentTime": 132,
+	"user": "global",
+	"relayKey": "Qk5U7G6O3AiUIM1yHCOFPf"
 }
 ```
