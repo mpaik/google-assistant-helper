@@ -294,9 +294,6 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
       if (text) {
         logger.info(`Text response from Google Assistant.`,{"conversationCounter": conversationCounter,
                                                             "text": text});
-        // Only deal with the first line of a multiline response
-        logger.silly(`Discarding all lines but first`);
-        text = text.split("\n")[0];
         logger.info(`Broadcasting content of text response`);
         sendTextInput(`broadcast ${text}`, user);
       }
