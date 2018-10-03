@@ -45,8 +45,13 @@ const AUDIO_OUT_LINEAR16 = "LINEAR16",
       AUDIO_OUT_MP3 = "MP3",
       AUDIO_OUT_OPUS_IN_OGG = "OGG";
 
+const validRelays = ["broadcast", "broadcastAudio", "custom", "chromecastAudio",
+                        "chromecastTTS", "chromecastURL", "chromecastControl"];
+
 const tts = (config.relays.chromecastTTS.on) ? require('@google-cloud/text-to-speech') : null;
 const ttsClient = (tts) ? new tts.TextToSpeechClient({keyFilename: `${config.relays.chromecastTTS.apiCredentialPath}`}) : null;
+
+const silence = new Int16Array(16000); // one second of silence, initialized to 0
 
 // Helps to keep track of what message is for what conversation with multiple streams
 var conversationCounter = 0;
@@ -93,7 +98,10 @@ var router = express.Router();
 var compositeRoute = [];
 Object.keys(config.relays).forEach(k => {
   if (config.relays[k].on) {
-    if (!config.relays[k].route) {
+    if (!validRelays.includes(k)) { // If this isn't an allowed relay
+      logger.error(`Invalid relay "${k}", aborting.`);
+    }
+    else if (!config.relays[k].route) {
       logger.error(`Route not defined for relay ${k}, aborting.`);
       process.exit(3);
     }
@@ -139,7 +147,9 @@ router.post(compositeRoute, function (req, res) {
         }
         else {
           logger.info(`Sending sound ${command} via broadcast for user ${user}.`);
-          setTimeout(() => {sendBroadcastAudio(config.sounds[command].path, user, config.sounds[command].format)},
+          setTimeout(() => {sendBroadcastAudio(config.relays.broadcastAudio.sounds[command].path,
+                                               user,
+                                               config.relays.broadcastAudio.sounds[command].format)},
                      delay == null ? 0 : delay * 1000);
           res.status(200).send({"result":`Played ${command} via broadcast.`});
         }
@@ -341,8 +351,9 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
           logger.debug(`Conversation ended with invitation to continue.`,{"conversationCounter": conversationCounter});
           if (bytes) {
             logger.debug(`Have audio bytes to continue conversation; sending.`,{"conversationCounter": conversationCounter});
-            assistants[user].start({"audio":{"encodingOut": AUDIO_OUT_MP3,
-                                      "encodingIn": format}},
+            assistants[user].start({"audio":{"encodingOut": AUDIO_OUT_LINEAR16,
+                                             "sampleRateOut": 16000,
+                                             "encodingIn": format}},
                           (conversation) => startConversation(conversation,conversationCounter,user,bytes,format,true));
           }
         }
@@ -350,7 +361,7 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
           if (audioBuffers.hasOwnProperty(conversationCounter)) { // We are ending a conversation that included audio
             logger.info(`Conversation ended with audio content; flushing to disk.`,{"conversationCounter":conversationCounter});
             try {
-              fs.writeFileSync(`./audio-${conversationCounter}.mp3`, Buffer.from(audioBuffers[conversationCounter]));
+              fs.writeFileSync(`./audio-${conversationCounter}.lpcm16`, Buffer.from(audioBuffers[conversationCounter]));
             }
             catch (err) {
               logger.error(`Unable to save audio response file.`,{"conversationCounter": conversationCounter,
@@ -368,7 +379,7 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
     .on('error', (error) => {
       logger.error(`Google Assistant returned error.`,{"conversationCounter": conversationCounter,
                                                        "error": error});
-      coversation.end();
+      conversation.end();
     });
 
     // If we are responding to a continued conversation with audio we're sending (e.g. broadcast audio)
@@ -381,6 +392,8 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
                      {"conversationCounter": conversationCounter});
         conversation.write(bytes.subarray(i,i+1600 < bytes.length ? i+1600 : bytes.length));
       }
+      // Write a bunch of silence
+      conversation.write(silence);
   }
 }
 
@@ -392,7 +405,9 @@ function sendTextInput(text, user) {
   else {
     logger.info(`Received request ${text} for user ${user}.`);
     let assistant = assistants[user];
-    assistant.start({"textQuery":text,"language":config.language,"audio": {"encodingOut": AUDIO_OUT_MP3}},
+    assistant.start({"textQuery":text,"language":config.language,
+                    "audio": {"encodingOut": AUDIO_OUT_LINEAR16,
+                              "sampleRateOut": 16000}},
                     (conversation) => startConversation(conversation,conversationCounter++,user));
   }
 }
@@ -414,7 +429,8 @@ function sendBroadcastAudio(path, user, format) {
 
     logger.debug(`Sending initial "broadcast" message to preface audio`);
     assistant.start({"textQuery": "broadcast","language":config.language,
-                     "audio":{"encodingOut": AUDIO_OUT_MP3}},
+                     "audio":{"encodingOut": AUDIO_OUT_LINEAR16},
+                              "sampleRateIn": 16000},
                     (conversation) => startConversation(conversation,conversationCounter++,user,bytes,format));
   }
 }

@@ -124,6 +124,8 @@ The `config.json` file contains all the configuration information for the applic
 
 For each relay, set `on` to `true` to activate, or to `false` to deactivate. Note that relay routes must be unique.
 
+**Note that while the URLs of the relay endpoints can be customized, the names of the relays, e.g. `custom`, `chromecastTTS`, may not.**
+
 The `broadcastAudio` and `chromecastAudio` relays may have the same preconfigured sounds or different ones, but they are separately defined because not all sounds can be played via broadcast. The input to the audio broadcast stream is expected to be a verbal command entered via microphone. As such, the machine learning model that processes the input expects said input to meet two important conditions:
 
 1. It must contain human speech
