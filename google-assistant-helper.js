@@ -32,7 +32,6 @@ const https = require('https'),
       // ExpressJS instance for internal chromecast serving - instantiated later
 var staticApp = null;
 
-
 const assistants = {}, // Map from username to assistant
       audioBuffers = {}, // Map from conversation to audio buffer
       relayRoutes = {}; // Map from relay to route
@@ -92,7 +91,7 @@ app.use((err, req, res, next) => {
   res.status(400).send({"result":"Malformed JSON"});
 });
 
-var router = express.Router();
+var router = express.Router({caseSensitive: true});
 
 // Build the routes
 var compositeRoute = [];
@@ -448,6 +447,7 @@ else {
 logger.info(`Relay online.`);
 if (config.relays.chromecastAudio.on || config.relays.chromecastTTS.on) {
   staticApp = express();
+  staticApp.set('case sensitive routing', true);
   logger.info(`Starting internal media server endpoint.`);
   // If there's a whitelist, apply it to the static server app
   if (config.staticServer.whitelist && config.staticServer.whitelist !== "") {
