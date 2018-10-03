@@ -136,14 +136,14 @@ function cast(serviceName, mediaUrl, mediaType, cb) {
 			}
 			players[serviceName] = player;
       player.on('status', (status) => {
-      	logger.info(`Player state: ${status.playerState}`, status);
+      	logger.info(`Player state for ${serviceName}: ${status.playerState}`, status);
       });
-      logger.info(`Playing media on ${player.session.displayName}`, media);
+      logger.info(`Playing media on ${player.session.displayName} on ${serviceName}`, media);
 
       // Actually play the media
       player.load(media, { autoplay: true }, (err, status) => {
       	if (err) logger.error(`Problem playing media.`,err);
-      	else logger.info(`Media playing. Player state: ${status.playerState}`);
+      	else logger.info(`Media playing. Player state for ${serviceName}: ${status.playerState}`);
 			})
 		});
 	});
