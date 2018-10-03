@@ -316,22 +316,17 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
     // Response: 'audio-data' - concatenate frames
     .on('audio-data', (audioData) => {
       // We only care about audio-data content if we're saving the audio.
-      if (config.saveAudioFiles) {
-        logger.debug(`Receiving audio-data frame`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
-        if (!audioBuffers.hasOwnProperty(conversationCounter)) {
-          logger.debug(`First frame of audio data - Initializing Int16 array.`,{"conversationCounter": conversationCounter});
-          audioBuffers[conversationCounter] = new Int16Array(audioData);
-        }
-        else {
-          logger.debug(`Continuing audio-data`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
-          audioBuffers[conversationCounter] = concatenate(Int16Array, audioBuffers[conversationCounter], new Int16Array(audioData));
-        }
-        logger.debug(`Received audio-data frame.`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length,
-                                                   "audioDataTotalLength": audioBuffers[conversationCounter].length});
+      logger.debug(`Receiving audio-data frame`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
+      if (!audioBuffers.hasOwnProperty(conversationCounter)) {
+        logger.debug(`First frame of audio data - Initializing Int16 array.`,{"conversationCounter": conversationCounter});
+        audioBuffers[conversationCounter] = new Int16Array(audioData);
       }
       else {
-        logger.debug(`Audio file saving disabled; ignoring audio-data.`);
+        logger.debug(`Continuing audio-data`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
+        audioBuffers[conversationCounter] = concatenate(Int16Array, audioBuffers[conversationCounter], new Int16Array(audioData));
       }
+      logger.debug(`Received audio-data frame.`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length,
+                                                 "audioDataTotalLength": audioBuffers[conversationCounter].length});
     })
     // Response: 'device-action' - Unhandled as we're not a physical device
     .on('device-action', (deviceRequestJson) => {logger.debug(`Received device-action - Unhandled.`,{"conversationCounter": conversationCounter,
@@ -359,14 +354,16 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
         }
         else {
           if (audioBuffers.hasOwnProperty(conversationCounter)) { // We are ending a conversation that included audio
-            logger.info(`Conversation ended with audio content; flushing to disk.`,{"conversationCounter":conversationCounter});
-            try {
-              fs.writeFileSync(`./audio-${conversationCounter}.lpcm16`, Buffer.from(audioBuffers[conversationCounter]));
-            }
-            catch (err) {
-              logger.error(`Unable to save audio response file.`,{"conversationCounter": conversationCounter,
-                                                                            "path": `./audio-${conversationCounter}.mp3`,
-                                                                            "error": err});
+            if (config.saveAudioFiles) {
+              logger.info(`Conversation ended with audio content; flushing to disk.`,{"conversationCounter":conversationCounter});
+              try {
+                fs.writeFileSync(`./audio-${conversationCounter}.lpcm16`, Buffer.from(audioBuffers[conversationCounter]));
+              }
+              catch (err) {
+                logger.error(`Unable to save audio response file.`,{"conversationCounter": conversationCounter,
+                                                                              "path": `./audio-${conversationCounter}.mp3`,
+                                                                              "error": err});
+              }
             }
             delete audioBuffers[conversationCounter];
           }
