@@ -15,8 +15,8 @@
                            "route": "/broadcastAudio",
                            "sounds": {
                                 "noisy": {
-                                    "path": "audio/foo.flac",
-                                    "format": "FLAC"
+                                    "path": "audio/foo.lpcm16",
+                                    "format": "LINEAR16"
                                 }
                             }
                         },
@@ -25,8 +25,8 @@
                             "route": "/chromecastAudio",
                             "sounds": {
                                 "noisy": {
-                                    "path": "audio/bar.flac",
-                                    "contentType": "audio/flac"
+                                    "path": "audio/bar.mp3",
+                                    "contentType": "audio/mp3"
                                 }
                             }
                         },

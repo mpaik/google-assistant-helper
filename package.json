@@ -1,6 +1,6 @@
 {
     "name": "google-assistant-helper",
-    "version": "0.0.1",
+    "version": "0.0.3",
     "description": "Middleman server to allow custom integration with Google Home/Assistant",
     "main": "google-assistant-helper.js",
     "scripts": {

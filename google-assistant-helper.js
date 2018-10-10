@@ -37,12 +37,13 @@ const assistants = {}, // Map from username to assistant
       relayRoutes = {}; // Map from relay to route
 
 // Values from proto enums for audio encodings - use in config files
-const AUDIO_IN_LINEAR16 = "LINEAR16",
-      AUDIO_IN_FLAC = "FLAC";
+const AUDIO_IN_LINEAR16 = "LINEAR16";
 
-const AUDIO_OUT_LINEAR16 = "LINEAR16",
-      AUDIO_OUT_MP3 = "MP3",
-      AUDIO_OUT_OPUS_IN_OGG = "OGG";
+const AUDIO_OUT_LINEAR16 = "LINEAR16";
+
+const MAX_BUFFER_LENGTH = 280000,
+      MAX_SILENCE_LENGTH = 8000,
+      SILENCE_THRESHOLD = 100;
 
 const validRelays = ["broadcast", "broadcastAudio", "custom", "chromecastAudio",
                         "chromecastTTS", "chromecastURL", "chromecastControl"];
@@ -50,7 +51,7 @@ const validRelays = ["broadcast", "broadcastAudio", "custom", "chromecastAudio",
 const tts = (config.relays.chromecastTTS.on) ? require('@google-cloud/text-to-speech') : null;
 const ttsClient = (tts) ? new tts.TextToSpeechClient({keyFilename: `${config.relays.chromecastTTS.apiCredentialPath}`}) : null;
 
-const silence = new Int16Array(16000); // one second of silence, initialized to 0
+const silence = new Int16Array(32000); // one second of silence, initialized to 0
 
 // Helps to keep track of what message is for what conversation with multiple streams
 var conversationCounter = 0;
@@ -139,8 +140,7 @@ router.post(compositeRoute, function (req, res) {
           logger.error(`No sound ${command} configured. Aborting.`);
           res.status(500).send({"result": `Server error.`});
         }
-        else if (!(config.relays.broadcastAudio.sounds[command].format === "FLAC"
-                || config.relays.broadcastAudio.sounds[command].format === "LINEAR16")) {
+        else if (!(config.relays.broadcastAudio.sounds[command].format === AUDIO_OUT_LINEAR16)) {
           logger.error(`Invalid format ${config.sounds[command].format} - only FLAC and LINEAR16 allowed. Aborting.`);
           res.status(500).send({"result": `Server error.`});
         }
@@ -247,12 +247,12 @@ router.post(compositeRoute, function (req, res) {
       }
       // If this is broadcast text or custom
       else {
-      // If this is a broadcast route, add broadcast
+        // If this is a broadcast route, add broadcast
         if (relayRoutes["broadcast"] != null && req.path === config.relays.broadcast.route) {
           command = `broadcast ${command}`
         }
         logger.info(`Sending "${command}" for user ${user}.`);
-        setTimeout(() => {sendTextInput(command, user)},
+        setTimeout(() => {sendTextInput(command, user, req.body.broadcastAudioResponse)},
                    delay == null ? 0 : delay * 1000);
         res.status(200).send({"result": `Executed ${command}`});
       }
@@ -280,51 +280,119 @@ app.use(router);
 // Then express-winston error logger
 app.use(expressWinston.errorLogger(winstonConfig));
 
-// Typed array utility function
-function concatenate(resultConstructor, ...arrays) {
-    let totalLength = 0;
-    for (let arr of arrays) {
-        totalLength += arr.length;
+// Chunk a large audio buffer into several smaller buffers at silence points
+function chunkBuffer(buf, minSamples, maxLength, threshold) {
+  let bufs = [];
+  let start = 0;
+  let end = null;
+
+  let endMarks = [];
+
+  logger.debug(`Chunking buffer of length ${buf.length} with maximum chunk length ${maxLength} with minimum silence length ${minSamples} samples.`);
+
+  for (let i = 0; i < buf.length; i+=2) {
+    if (buf.readInt16LE(i) < threshold) {
+      if (end == null) { // If this is the beginning fencepost
+        start = i;
+      }
+      end = i;
     }
-    let result = new resultConstructor(totalLength);
-    let offset = 0;
-    for (let arr of arrays) {
-        result.set(arr, offset);
-        offset += arr.length;
+    else if (end != null) { // If we are ending a window of silence
+      if (end-start+2 > minSamples) {
+        // If we under the boundary and if this is long enough, mark end
+        if (i < maxLength) {
+          endMarks.push(i);
+        }
+        // If we have crossed the maximum length, slice and start over
+        else {
+          // If we have no silences, abort
+          if (endMarks.length == 0) {
+            logger.error(`Unable to create chunk shorter than ${maxLength} from buffer. Aborting.`);
+            throw `Unable to create chunk shorter than ${maxLength} from buffer. Aborting.`;
+          }
+          logger.debug(`Creating chunk of length ${endMarks[endMarks.length-1]}, less than ${maxLength}.`,endMarks);
+          bufs.push(buf.slice(0,endMarks[endMarks.length-1]));
+          buf = buf.slice(endMarks[endMarks.length-1]);
+          i = 0;
+          start = 0;
+          endMarks = [];
+        }
+        end = null;
+      }
     }
-    return result;
+  }
+  // Append last chunk
+  bufs.push(buf);
+  return bufs;
+}
+
+// Truncate any silences to at most maxSamples samples
+function truncateSilences(buf, maxSamples, threshold) {
+  let start = 0;
+  let end = null;
+
+  for (let i = 0; i < buf.length; i+=2) {
+    if (buf.readInt16LE(i) < threshold) {
+      if (end == null) { // If this is the beginning fencepost
+        start = i;
+      }
+      end = i;
+    }
+    else if (end != null) { // If we are ending a window of silence
+      if (end-start+2 > maxSamples) { 
+        let deleteCount = end-start-maxSamples+2;
+        buf = Buffer.concat([buf.slice(0,start),buf.slice(start+deleteCount)]);
+
+        // Move fencepost
+        i -= deleteCount;
+      }
+      end = null;
+    }
+  }
+  return buf;
 }
 
 // Callback from conversations
-function startConversation(conversation, conversationCounter, user, bytes, format, continued) {
+function startConversation(conversation, conversationCounter, user, buf, format, continued, broadcastAudioResponse) {
   conversation
     // Response: 'response'
     .on('response', (text) => {
       if (text) {
         logger.info(`Text response from Google Assistant.`,{"conversationCounter": conversationCounter,
                                                             "text": text});
-        logger.info(`Broadcasting content of text response`);
-        sendTextInput(`broadcast ${text}`, user);
+        // If we're not expecting audio to supercede text (e.g. jokes)
+        if (!broadcastAudioResponse) {
+          logger.info(`Broadcasting content of text response`);
+          sendTextInput(`broadcast ${text}`, user);
+        }
       }
     })
     // Response: 'end-of-utterance'
     .on('end-of-utterance', () => {logger.debug(`Received end-of-utterance.`,{"conversationCounter": conversationCounter});})
     // Response: 'transcription' for speech to text - Unhandled as we're not issuing voice commands
-    .on('transcription', (transcriptionResult) => {logger.debug(`Received transcription.`,{"conversationCounter": conversationCounter,
-                                                                                           "transcriptionResult" : transcriptionResult});})
+    .on('transcription', (transcriptionResult) => {
+      if (transcriptionResult.done) {
+        logger.debug(`Received completed transcription.`,{"conversationCounter": conversationCounter,
+                                                          "transcriptionResult" : transcriptionResult});
+      }
+      else { // Not done
+        logger.silly(`Received intermediate transcription.`,{"conversationCounter": conversationCounter,
+                                                             "transcriptionResult" : transcriptionResult});
+      }
+    })
     // Response: 'audio-data' - concatenate frames
     .on('audio-data', (audioData) => {
       // We only care about audio-data content if we're saving the audio.
-      logger.debug(`Receiving audio-data frame`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
+      logger.silly(`Receiving audio-data frame`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
       if (!audioBuffers.hasOwnProperty(conversationCounter)) {
-        logger.debug(`First frame of audio data - Initializing Int16 array.`,{"conversationCounter": conversationCounter});
-        audioBuffers[conversationCounter] = new Int16Array(audioData);
+        logger.debug(`First frame of audio data - Initializing.`,{"conversationCounter": conversationCounter});
+        audioBuffers[conversationCounter] = audioData;
       }
       else {
-        logger.debug(`Continuing audio-data`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
-        audioBuffers[conversationCounter] = concatenate(Int16Array, audioBuffers[conversationCounter], new Int16Array(audioData));
+        logger.silly(`Continuing audio-data`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length});
+        audioBuffers[conversationCounter] = Buffer.concat([audioBuffers[conversationCounter],audioData]);
       }
-      logger.debug(`Received audio-data frame.`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length,
+      logger.silly(`Received audio-data frame.`,{"conversationCounter": conversationCounter, "audioDataFrameLength": audioData.length,
                                                  "audioDataTotalLength": audioBuffers[conversationCounter].length});
     })
     // Response: 'device-action' - Unhandled as we're not a physical device
@@ -341,31 +409,38 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
       if (error) logger.error(`Error while conducting conversation; conversation ended.`,{"conversationCounter": conversationCounter,
                                                                                           "error": error});
       else {
+        if (audioBuffers.hasOwnProperty(conversationCounter)) { // We are ending a conversation that included audio
+          if (config.saveAudioFiles) {
+            logger.info(`Conversation ended with audio content; flushing to disk.`,{"conversationCounter":conversationCounter});
+            try {
+              fs.writeFileSync(`./audio-${conversationCounter}.lpcm16`, audioBuffers[conversationCounter]);
+            }
+            catch (err) {
+              logger.error(`Unable to save audio response file.`,{"conversationCounter": conversationCounter,
+                                                                            "path": `./audio-${conversationCounter}.lpcm16`,
+                                                                            "error": err});
+            }
+          }
+          if (broadcastAudioResponse) {
+            logger.info(`Conversation ended with audio content; broadcasting.`,{"conversationCounter":conversationCounter});
+            // TODO let bufs = chunkBuffer(audioBuffers[conversationCounter],16000,100000,10);
+            let audioBuffer = truncateSilences(audioBuffers[conversationCounter],MAX_SILENCE_LENGTH,SILENCE_THRESHOLD);
+
+            sendBroadcastAudioBuffer(audioBuffer,user,AUDIO_OUT_LINEAR16);
+          }
+          delete audioBuffers[conversationCounter];
+        }
         if (continueConversation) {
           logger.debug(`Conversation ended with invitation to continue.`,{"conversationCounter": conversationCounter});
-          if (bytes) {
-            logger.debug(`Have audio bytes to continue conversation; sending.`,{"conversationCounter": conversationCounter});
+          if (buf) {
+            logger.debug(`Have audio buffer to continue conversation; sending.`,{"conversationCounter": conversationCounter});
             assistants[user].start({"audio":{"encodingOut": AUDIO_OUT_LINEAR16,
                                              "sampleRateOut": 16000,
                                              "encodingIn": format}},
-                          (conversation) => startConversation(conversation,conversationCounter,user,bytes,format,true));
+                          (conversation) => startConversation(conversation,conversationCounter,user,buf,format,true));
           }
         }
         else {
-          if (audioBuffers.hasOwnProperty(conversationCounter)) { // We are ending a conversation that included audio
-            if (config.saveAudioFiles) {
-              logger.info(`Conversation ended with audio content; flushing to disk.`,{"conversationCounter":conversationCounter});
-              try {
-                fs.writeFileSync(`./audio-${conversationCounter}.lpcm16`, Buffer.from(audioBuffers[conversationCounter]));
-              }
-              catch (err) {
-                logger.error(`Unable to save audio response file.`,{"conversationCounter": conversationCounter,
-                                                                              "path": `./audio-${conversationCounter}.mp3`,
-                                                                              "error": err});
-              }
-            }
-            delete audioBuffers[conversationCounter];
-          }
           logger.debug(`Conversation ended.`,{"conversationCounter":conversationCounter});
           conversation.end();
         }
@@ -379,55 +454,64 @@ function startConversation(conversation, conversationCounter, user, bytes, forma
     });
 
     // If we are responding to a continued conversation with audio we're sending (e.g. broadcast audio)
-    if (bytes && continued) {
+    if (buf && continued) {
       logger.info(`Sending audio in response to continued conversation.`,{"conversationCounter": conversationCounter,
-                                                                          "audioDataTotalLength": bytes.length});
+                                                                          "audioDataTotalLength": buf.length});
       let i;
-      for (i = 0; i < bytes.length; i+= 1600) {
-        logger.debug(`Sending frame; indexes ${i} to ${i+1600 < bytes.length ? i+1600 : bytes.length} of ${bytes.length}`,
+      for (let i = 0; i < buf.length; i+= 16000) {
+        logger.silly(`Sending frame; indexes ${i} to ${i+16000 < buf.length ? i+16000 : buf.length} of ${buf.length}`,
                      {"conversationCounter": conversationCounter});
-        conversation.write(bytes.subarray(i,i+1600 < bytes.length ? i+1600 : bytes.length));
+        conversation.write(buf.slice(i,i+16000 < buf.length ? i+16000 : buf.length));
       }
+      logger.debug(`Sent ${buf.length} bytes.`,{"conversationCounter": conversationCounter,
+                                                  "audioDataTotalLength": buf.length});
       // Write a bunch of silence
       conversation.write(silence);
   }
 }
 
 // Our primary method of interacting with Google Assistant
-function sendTextInput(text, user) {
+function sendTextInput(text, user, broadcastAudioResponse) {
   if (!config.users.hasOwnProperty(user)) {
     logger.error(`User ${user} not found, aborting request ${text}.`);
   } 
   else {
-    logger.info(`Received request ${text} for user ${user}.`);
+    logger.info(`Received request "${text}"" for user ${user}.`);
     let assistant = assistants[user];
     assistant.start({"textQuery":text,"language":config.language,
                     "audio": {"encodingOut": AUDIO_OUT_LINEAR16,
                               "sampleRateOut": 16000}},
-                    (conversation) => startConversation(conversation,conversationCounter++,user));
+                    (conversation) => startConversation(conversation,conversationCounter++,user,null,null,false,broadcastAudioResponse));
   }
 }
 
-// For broadcasting audio files (only FLAC and LPCM supported by the Google Assistant API)
-function sendBroadcastAudio(path, user, format) {
+function sendBroadcastAudio(path,user,format) {
+  let buf;
+  logger.info(`Received request to broadcast ${path} in format ${format} for user ${user}.`);
+  logger.debug(`Opening audio file ${path}`)
+  try {
+    buf = new fs.readFileSync(path);
+  }
+  catch (err) {logger.error(`Unable to load file ${path}`, err);};    
+  sendBroadcastAudioBuffer(buf,user,format);
+}
+
+// For broadcasting audio files
+function sendBroadcastAudioBuffer(buf,user,format) {
   if (!config.users.hasOwnProperty(user)) {
     logger.error(`User ${user} not found, aborting request ${text}.`);
-  } 
+  }
+  else if (buf.length > MAX_BUFFER_LENGTH) {
+    logger.warn(`Audio buffer has length ${buf.length}, which is too long. Aborting.`);
+  }
   else {
-    let bytes;
-    logger.info(`Received request to broadcast ${path} in format ${format} for user ${user}.`);
     let assistant = assistants[user];
-    logger.debug(`Opening audio file ${path}`)
-    try {
-      bytes = new Int16Array(fs.readFileSync(path));
-    }
-    catch (err) {logger.error(`Unable to load file ${path}`, err);};
 
     logger.debug(`Sending initial "broadcast" message to preface audio`);
     assistant.start({"textQuery": "broadcast","language":config.language,
                      "audio":{"encodingOut": AUDIO_OUT_LINEAR16},
                               "sampleRateIn": 16000},
-                    (conversation) => startConversation(conversation,conversationCounter++,user,bytes,format));
+                    (conversation) => startConversation(conversation,conversationCounter++,user,buf,format));
   }
 }
 

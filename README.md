@@ -133,7 +133,7 @@ The `broadcastAudio` and `chromecastAudio` relays may have the same preconfigure
 
 Thus the server cannot broadcast audio files such as alarms, sound effects, ringtones, etc. Perhaps more surprisingly, if the sound provided is too clean (e.g. the output from a text-to-speech interpreter), the call will still fail. The Google Assistant interpreter appears to issue an [`END_OF_UTTERANCE`](https://developers.google.com/assistant/sdk/reference/rpc/google.assistant.embedded.v1alpha2#google.assistant.embedded.v1alpha2.EmbeddedAssistant) at the end of a command only when noise is present; therefore an audio file without noise will cause the Assistant request to time out.
 
-Further, inputs to the audio broadcast facility may only be in `FLAC` or `LINEAR16` (raw), while Chromecast has a much wider range of valid input formats. **Note that the sounds for the `broadcastAudio` relay have `format` attributes whereas those for the `chromecastAudio` endpoint have `contentType` attributes.**
+Further, inputs to the audio broadcast facility may only be in `FLAC` or `LINEAR16` (raw), while Chromecast has a much wider range of valid input formats. **Note that the sounds for the `broadcastAudio` relay have `format` attributes whereas those for the `chromecastAudio` endpoint have `contentType` attributes. Note also that while the Assistant API supports `FLAC`, this application does not.**
 
 `staticServer` - Contains configuration for the static server used to serve assets for the `chromecastAudio` and `chromecastTTS` relays:
 
@@ -181,6 +181,10 @@ Requests must have the `Content-Type: application/json`, and the body must be va
 
 The server will respond with a `200` code if the request is successful, or a `500` if not.
 
+All requests can also optionally pass:
+
+* `delayInSecs` - **Number**. The number of seconds by which to delay the execution of this command. This can be used, for instance, to announce the completion of a brew cycle on a coffeemaker but delay the broadcast by long enough to allow the coffee to finish dripping.
+
 ### Broadcast
 
 Broadcasts invoke the broadcast functionality of Google Assistant devices. This is analogous to typing `broadcast <message>` into the Google Assistant on an Android device. In this case, the `broadcast` is omitted, and only the message is included in the `command` field in the request JSON, e.g.:
@@ -195,7 +199,7 @@ Broadcasts invoke the broadcast functionality of Google Assistant devices. This 
 
 ### BroadcastAudio
 
-Audio broadcast commands rely on preconfigured `FLAC` or `LINEAR16` files with defined names, which are sent as byte streams via the Google Assistant API. In this case, the `command` field in the request JSON is populated with the name of the desired sound, e.g.: 
+Audio broadcast commands rely on preconfigured `LINEAR16` files with defined names, which are sent as byte streams via the Google Assistant API. In this case, the `command` field in the request JSON is populated with the name of the desired sound, e.g.: 
 
 ```
 {
@@ -205,7 +209,7 @@ Audio broadcast commands rely on preconfigured `FLAC` or `LINEAR16` files with d
 }
 ```
 
-As stated above, files for audio broadcast must contain human speech and must contain noise to trigger the correct events from the API. Audio that is too clean can be made to work by adding Gaussian noise throughout the clip.
+As stated above, files for audio broadcast must contain human speech to trigger the correct events from the API.
 
 ### Custom
 
@@ -220,6 +224,23 @@ Custom Google Assistant commands allow free entry of text into the Assistant. Th
 ```
 
 Commands that begin a conversation, i.e. those that require a response other than a simple acknowledgment from the Google Assistant, elicit text responses from the assistant which are then broadcast to the Google Assistant devices associated with the account used to invoke the command. Otherwise, the invocation is more or less identical to that of the audio broadcast.
+
+Custom commands that are expected to return audio (not all do - many return only text, while yet others return both) can be set to broadcast the audio response by providing an additional argument in the JSON:
+
+* `broadcastAudioResponse` - **Boolean**. A flag to indicate whether or not to broadcast an audio response.
+
+The facility to broadcast audio has several important limitations. First, the Google Assistant will interpret a long enough silence as the end of utterance, and will initiate broadcast, so many responses from the Assistant itself will be cut off in the middle (e.g. jokes that wait to deliver a punchline). As such, this application truncates silences before sending the audio to the Google Assistant API, which may make the cadence of the speech sound fast. Second, the Google Assistant broadcast facility has an undocumented hard limit for length of about 20 seconds. If audio longer than this is passed via the API, the Assistant will fail in unpredictable ways. As such, if audio longer than a threshold value is returned by a custom request, this application will simply drop the request rather than cause failure. The aborted attempt will be logged, however.
+
+To test that this facility is working, you can try, e.g.: 
+
+```
+{
+    "command": "tell me a joke",
+    "user": "global",
+    "relayKey": "Qk5U7G6O3AiUIM1yHCOFPf",
+    "broadcastAudioResponse": true
+}
+```
 
 ### ChromecastAudio
 
