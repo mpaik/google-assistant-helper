@@ -151,7 +151,7 @@ function cast(serviceName, mediaUrl, mediaType, cb) {
 	client.on('error', function(err) {
 		logger.error(`Client returned error. Closing.`, err)
 	  client.close();
-	  playerss[serviceName] = null;
+	  players[serviceName] = null;
 	});
 };
 
